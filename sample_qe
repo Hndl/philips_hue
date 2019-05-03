@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html>
+	<title>Code Example: Sound of the Underground!</title>
+	
+	
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.6.0/p5.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.2/addons/p5.dom.min.js"></script>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.7.2/addons/p5.sound.min.js"></script>
+	
+	<script src="./hue.js"></script>
+	<script type="text/javascript">
+		
+		const ERR_NO_3000 = "Unable to initiate the coputer's mic.";
+		const STATE_INIT = 100 ;
+		const STATE_ERROR = -1;
+		const STATE_WAITUSER = 200;
+		const STATE_PREPARING = 300;
+		const STATE_PAUSED = 350;
+		const STATE_RUNNING = 400;
+		const BORDER = 50
+
+		const SOUND_ANALYZE_SMOOTH = 0.8;
+		const SOUND_ANALYZE_SIZE = 32;
+
+		const BG_ALPHA = 0.0 ;
+		
+
+		var MAX_DRAWHEIGHT = -1;
+		var MAX_DRAWWIDTH = -1;
+
+		var canvas = null;
+		var inputMic = null;
+		var fft = null;
+
+		
+		var STATE = STATE_INIT;
+		var xoff = 0;
+
+		var lightOn = false;
+
+		var prevEqAvgHignBandHue = 0;
+		var prevEqAvgHignBandBri = 0;
+
+		var hueLights = null;
+		var usrKey = "";
+		var applicationName = "QELIGHTS";
+		var userName = "WEB01";
+		var amplitude = null;
+		var light1 = true;
+		var light1Enabled = false;
+		var light2 = true;
+		var light2Enabled = false;
+		function enableHUE () {
+
+		
+			if ( hueLights.registerUserRequired() )
+				hueLights.registerNewUser(applicationName,userName);
+			else if ( !hueLights.userRegistered() )
+				hueLights.verifyUser();
+		
+			
+		}
+		
+		function preload(){
+			inputMic = new p5.AudioIn( enableMicError );
+			inputMic.start();
+			fft = new p5.FFT(SOUND_ANALYZE_SMOOTH,SOUND_ANALYZE_SIZE);
+			//console.log(`MIC:${inputMic.enabled}`);
+			fft.setInput( inputMic );
+			amplitude = new p5.Amplitude( );
+			amplitude.setInput( inputMic);
+			STATE = STATE_WAITUSER;
+		
+			colorMode(HSB);
+
+		}
+
+		function mouseClicked () {
+			
+			switch ( STATE ) {
+				case STATE_WAITUSER :
+					STATE = STATE_PREPARING;
+					(getAudioContext()).resume().then(() => {
+						STATE = STATE_RUNNING ;
+						enableHUE();
+	  				});
+					break;
+				case STATE_PREPARING :
+					break;
+				case STATE_RUNNING :
+					noLoop();
+					STATE = STATE_PAUSED;
+					break;
+				case STATE_PAUSED:
+					loop();
+					STATE = STATE_RUNNING;
+					break;	
+			}
+		}
+
+		function keyPressed() {
+			console.log(`key pressed: ${keyCode}`);
+  			
+  			 if (keyCode === 82)
+    		 	if (hueLights.hasLights() ) {
+					renderHUD( hueLights.lights() );
+				} 
+
+			if (keyCode === 32){
+				enableHUE();
+			}
+
+			if (keyCode === 49){
+				try{
+					light1Enabled = !light1Enabled;
+					let toggleOn = hueLights.generateLightStatePayload(light1);
+					hueLights.setHueLightState("1",toggleOn);
+					light1 = !light1;
+				}catch(err){
+					console.error(`keyPressed: ${err}`);
+				}
+			}
+			if (keyCode === 50){
+				try{
+					light2Enabled = !light2Enabled;
+					let toggleOn = hueLights.generateLightStatePayload(light2);
+					hueLights.setHueLightState("2",toggleOn);
+					light2 = !light2;
+
+				}catch(err){
+					console.error(`keyPressed: ${err}`);
+				}
+			}
+		}
+			
+	
+		function setup() {
+
+			canvas = createCanvas(window.innerWidth, window.innerHeight);
+			MAX_DRAWHEIGHT = window.innerHeight - (BORDER*2);
+			MAX_DRAWWIDTH = window.innerWidth-(BORDER*2);
+			bar_width = MAX_DRAWWIDTH-(BORDER*2) / SOUND_ANALYZE_SIZE;
+			xoff = 0;
+
+			try{
+			
+				hueLights = new Hue( usrKey );
+
+			} catch( err ){
+				console.error(`huelights constructor - ${err}`);
+			}
+
+
+ 		}
+
+ 		function enableMicError (  _err ) { alert( _err ); }
+
+ 		function render( _data  ) { 
+
+ 			const DATA_RANGE_MIN = 0;
+ 			const DATA_RANGE_MAX = 255;
+ 			const DRAW_MIN = 0
+ 			const DRAW_MAX = floor(MAX_DRAWHEIGHT/2);
+ 			const POINT_SIZE = (MAX_DRAWWIDTH)/SOUND_ANALYZE_SIZE;
+ 			let startY = window.innerHeight/2;
+ 			xoff++;
+ 			let avgHighBand = 0;
+ 			let avgLowBand = 0;
+ 			let avgHighDataPoints = 0;
+ 			let avgDataPoints = 0;
+ 			let avgBand = 0;
+
+ 			for ( let i = 0 ; i < _data.length ; i ++ ){
+
+ 				let spectrumValue = _data[i];
+
+ 				if ( spectrumValue>0)
+ 					avgDataPoints++;
+	 				if ( i < (1) ) {
+	 					avgHighBand += spectrumValue;
+
+	 					avgHighDataPoints++;
+	 				} else {
+						avgLowBand += spectrumValue;
+	 				}
+ 				avgBand += spectrumValue;
+ 				
+ 				let eqHeight = floor(map (spectrumValue,DATA_RANGE_MIN,DATA_RANGE_MAX, DRAW_MIN, DRAW_MAX));
+	 			let hue2 = floor(map(eqHeight,DRAW_MIN,DRAW_MAX,0,255));	
+	 			let startX = map( i, 0, _data.length-1 , BORDER+BORDER, MAX_DRAWWIDTH) ;
+	 	
+	 			stroke(hue2,100,100);
+	 			strokeWeight(2);
+	 			line(startX,startY, startX,startY-eqHeight);					
+	 			strokeWeight(map(spectrumValue,DATA_RANGE_MIN,DATA_RANGE_MAX,2,35));
+	 			point( startX,startY-eqHeight); 
+ 			}
+
+ 	//		let eqAvgHighHeight = floor(map (avgHighBand/avgHighDataPoints,DATA_RANGE_MIN,DATA_RANGE_MAX, DRAW_MIN, DRAW_MAX));
+ 	 			 		
+	//		let eqAvgHighBri= floor(map(eqAvgHighHeight,DRAW_MIN,DRAW_MAX,0,255));	
+		//	let eqAvgHighHue= floor(map(avgDataPoints,0,_data.length-1,0,65535));	
+	 //	
+ 		//	let eqAvgLowHeight = floor(map (avgLowBand,DATA_RANGE_MIN,DATA_RANGE_MAX, DRAW_MIN, DRAW_MAX));
+			
+		//	stroke(eqAvgHighHue,100,100);
+		//	strokeWeight(1);
+	 	//	line(BORDER+BORDER,startY-eqAvgHighHeight, MAX_DRAWWIDTH,startY-eqAvgHighHeight);
+ 			
+ 			let targetVolume = getVolume();
+ 			
+ 			strokeWeight(0.5);
+ 
+ 			for ( let i = 0 ; i <= targetVolume ; i+=10){
+ 				stroke(i,100,100);
+ 				ellipse(width/2,(height/4)*3,i,i);
+ 				
+ 			}
+ 			if (frameCount%4 ===  0){
+ 				let hue = map(targetVolume,0,255,0,65535);
+ 				let colorPayload = hueLights.generateLightColorPayload(hue,targetVolume,targetVolume);
+	 			if ( light1Enabled ){
+					hueLights.setHueLightState("1",colorPayload);
+				}
+				if ( light2Enabled ){
+					hueLights.setHueLightState("2",colorPayload);
+				}
+			}
+	 		
+ 		}
+
+ 		function renderHUD ( _lightsData ) {
+ 			let idx = 1;
+
+ 			let lightsExists = false;
+	
+ 			push();
+ 			textSize(12);
+ 			fill(255, 100, 100);
+ 			stroke(255,100,100);
+ 	
+ 			let xoff = 55;
+ 			let yoff = 55;
+ 	
+ 			if ( hueLights.registerUserRequired() )
+ 				text(`HUE - bridge ${hueLights.getBridge()} userKey:User Must Be Registered. Please press the button ontop of the bridge and then press spacebar `,xoff, 30);
+			else
+ 				text(`HUE - bridge ${hueLights.getBridge()} userKey:${hueLights.getUserKey()}`,xoff, 30);
+
+ 			if ( _lightsData === undefined  ) {
+ 				text(`HUE - No Lights...`);
+ 				return;
+ 			}
+ 			
+ 			let lightCfgExists = _lightsData.hasOwnProperty(""+idx);
+ 	
+
+ 			while ( lightCfgExists ) {
+ 				try{
+
+	 				yoff += 20;
+	 				let light = _lightsData[""+idx] ;
+	 		
+	 				text(`[${ (light.state.on === true)? "  ON" : "OFF"}] -- ${idx} : ${light.productname} @${light.name} -- brightness [${light.state.bri}] hue [${light.state.hue}] saturation [${light.state.sat}]`,xoff,yoff );
+	 		
+	 				idx++;
+	 				lightCfgExists = _lightsData.hasOwnProperty(""+idx);
+ 				
+ 				} catch (err) {
+ 					console.error(err);
+ 				}
+
+ 			}
+
+ 			yoff += 20;
+ 			
+ 			text(`Amplitude:${getVolume()}`,xoff,yoff);
+ 	
+
+ 			pop();
+ 		}
+
+ 		function getVolume(){
+ 			let volume = -1;
+ 			try{
+ 				volume = floor(map(amplitude.getLevel()*100, 0, 1, 0, 255));
+ 				if ( volume>255)
+ 					volume=255;
+ 			} catch (err){
+ 				console.log(err)
+ 			}
+ 			return volume;
+ 		}
+
+		function draw() {
+
+			try{			
+				background('rgba(0,0,0, 0.25)');
+
+				switch ( STATE ) {
+					case STATE_WAITUSER :
+						stroke(255,100,100); 
+						break;
+					case STATE_PREPARING :
+						stroke(100,100,100); 
+						break;
+					case STATE_RUNNING :
+						stroke(50,100,100); 
+						break;
+				}
+				
+				strokeWeight(2);
+ 				noFill();
+ 				rect ( BORDER,BORDER,MAX_DRAWWIDTH,MAX_DRAWHEIGHT);
+
+				switch (STATE ) {
+					case STATE_RUNNING :
+							if ( inputMic.getLevel() > 0 ) { 
+						 		var spectrum = fft.analyze();	
+						 		render ( spectrum );
+					 		}
+
+						break;
+				}
+
+				renderHUD( hueLights.lights() );
+		
+				if (hueLights.userRegistered() && frameCount%500===0){
+					console.log('refreshing lights status');
+					hueLights.getHueLights();
+				}
+
+ 			} catch (_err) {
+				console.error(_err);
+				noLoop();
+			}
+
+			
+		}
+
+
+		
+	
+	</script>
+<body>
+
+</body>
+</html>
